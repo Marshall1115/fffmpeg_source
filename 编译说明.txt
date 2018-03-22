@@ -1,0 +1,2 @@
+编译x264 和aac使用config.sh
+编译linux 使用build.sh

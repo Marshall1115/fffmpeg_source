@@ -1,0 +1,1 @@
+config:x86:x86_64:generic:linux:gcc 5.4.0 (Ubuntu 5.4.0-6ubuntu1~16.04.4) 20160609:--disable-yasm --enable-ffplay --disable-stripping --disable-asm --enable-debug --disable-optimizations
