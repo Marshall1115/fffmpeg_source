@@ -199,18 +199,18 @@ void show_help_children(const AVClass *class, int flags)
     while (child = av_opt_child_class_next(class, child))
         show_help_children(child, flags);
 }
-
-static const OptionDef *find_option(const OptionDef *po, const char *name)
+//
+static const OptionDef *find_option(const OptionDef *po, const char *name)//假设-y命令 那么name=y
 {
     const char *p = strchr(name, ':');
     int len = p ? p - name : strlen(name);
 
-    while (po->name) {
+    while (po->name) {//查找po->name名称为 y
         if (!strncmp(name, po->name, len) && strlen(po->name) == len)
             break;
         po++;
     }
-    return po;
+    return po;//返回y对应的OptionDef为结构体
 }
 
 /* _WIN32 means using the windows libc - cygwin doesn't define that
@@ -621,9 +621,9 @@ static int match_group_separator(const OptionGroupDef *groups, int nb_groups,
  * @param arg argument of the group delimiting option
  */
 static void finish_group(OptionParseContext *octx, int group_idx,
-                         const char *arg)
+                         const char *arg)//group_idx =1 arg为 i
 {
-    OptionGroupList *l = &octx->groups[group_idx];
+    OptionGroupList *l = &octx->groups[group_idx];//1为 输入组
     OptionGroup *g;
 
     GROW_ARRAY(l->groups, l->nb_groups);
@@ -635,6 +635,7 @@ static void finish_group(OptionParseContext *octx, int group_idx,
 #if CONFIG_SWSCALE
     g->sws_opts    = sws_opts;
 #endif
+	//右参数都没赋值
     g->swr_opts    = swr_opts;
     g->codec_opts  = codec_opts;
     g->format_opts = format_opts;
@@ -656,9 +657,10 @@ static void finish_group(OptionParseContext *octx, int group_idx,
  * Add an option instance to currently parsed group.
  */
 static void add_opt(OptionParseContext *octx, const OptionDef *opt,
-                    const char *key, const char *val)
+                    const char *key, const char *val)//假设-y命令 g->nb_opts =1 key=y val=1 opt对应命令y的OptionDef -y为全局命令
+                    								//随后赋值octx->global_opts 对应的值
 {
-	//  /*判断属于哪一组*/
+	//  /*判断命令属于哪一组*/
     int global = !(opt->flags & (OPT_PERFILE | OPT_SPEC | OPT_OFFSET));
     OptionGroup *g = global ? &octx->global_opts : &octx->cur_group;
 	
@@ -739,7 +741,7 @@ int split_commandline(OptionParseContext *octx, int argc, char *argv[],
 	
 	/*开始解析命令*/
     while (optindex < argc) {
-        const char *opt = argv[optindex++], *arg;
+        const char *opt = argv[optindex++], *arg;// 命令行参数如-i  空格后面为下一个参数
         const OptionDef *po;
         int ret;
 
@@ -750,7 +752,7 @@ int split_commandline(OptionParseContext *octx, int argc, char *argv[],
             continue;
         }
         /* unnamed group separators, e.g. output filename */
-		//如果不是以“-”开头或者后面没参数了，或者前一个是“--”就按输出文件组结束处理
+		//如果不是以“-”开头或者后面没参数了，或者前一个是“--”就按 输出文件组 结束处理 跳出while循环
         if (opt[0] != '-' || !opt[1] || dashdash+1 == optindex) {
             finish_group(octx, 0, opt);
             av_log(NULL, AV_LOG_DEBUG, " matched as %s.\n", groups[0].name);
@@ -767,7 +769,7 @@ do {                                                                           \
     }                                                                          \
 } while (0)
 
-        /* named group separators, e.g. -i   看是不是-i如果是的话输入文件组参数结束*/
+        /* named group separators, e.g. -i   match_group_separator 看是不是-i如果是的话返回值为1*/
         if ((ret = match_group_separator(groups, nb_groups, opt)) >= 0) {
             GET_ARG(arg);
 		   /*当一组命令分配好后
@@ -780,8 +782,8 @@ do {                                                                           \
             continue;
         }
 
-        /* normal options 不是输入结束，输出结束在options中找是否存在 ffmpeg_opt.c */
-        po = find_option(options, opt);
+        /* normal options 不是输入结束，输出结束在options中找是否存在 ffmpeg_opt.c   */
+        po = find_option(options, opt);//查找配置选项，如-y
         if (po->name) {
             if (po->flags & OPT_EXIT) {
                 /* optional argument, e.g. -h 遇到这个参数是要直接退出程序的，在write_option（）中在最后有判断*/
