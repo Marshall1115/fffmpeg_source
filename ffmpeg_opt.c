@@ -590,7 +590,7 @@ static void add_input_streams(OptionsContext *o, AVFormatContext *ic)
         if (!ist)
             exit_program(1);
 
-        GROW_ARRAY(input_streams, nb_input_streams);
+        GROW_ARRAY(input_streams, nb_input_streams);//为input_streams开辟空间，大小为nb_input_streams
         input_streams[nb_input_streams - 1] = ist;
 
         ist->st = st;

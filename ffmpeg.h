@@ -91,7 +91,7 @@ typedef struct OptionsContext {
     OptionGroup *g;
 
     /* input/output options */
-    int64_t start_time;
+    int64_t start_time;//输入文件从那个位置开始播放
     const char *format;
 
     SpecifierOpt *codec_names;

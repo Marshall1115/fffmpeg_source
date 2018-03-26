@@ -419,7 +419,7 @@ int parse_optgroup(void *optctx, OptionGroup *g)
 
         av_log(NULL, AV_LOG_DEBUG, "Applying option %s (%s) with argument %s.\n",
                o->key, o->opt->help, o->val);
-
+		//write_option（）根据预定好的设置规则。是设置到全局变量，还是到OptionsContext结构体的变量中
         ret = write_option(optctx, o->opt, o->key, o->val);
         if (ret < 0)
             return ret;
@@ -782,7 +782,7 @@ do {                                                                           \
             continue;
         }
 
-        /* normal options 不是输入结束，输出结束在options中找是否存在 ffmpeg_opt.c   */
+        /* normal options 不是输入结束，输出结束在options中找是否存在options 在 ffmpeg_opt.c 2815行和 cmdutils_common_opts.h   */
         po = find_option(options, opt);//查找配置选项，如-y
         if (po->name) {
             if (po->flags & OPT_EXIT) {
