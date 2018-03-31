@@ -2764,7 +2764,7 @@ int ffmpeg_parse_options(int argc, char **argv)
         goto fail;
     }
 
-    /* apply global options  设置全局参数 */
+    /* apply global options  设置全局参数   */
     ret = parse_optgroup(NULL, &octx.global_opts);
     if (ret < 0) {
         av_log(NULL, AV_LOG_FATAL, "Error parsing global options: ");

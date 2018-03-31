@@ -284,7 +284,9 @@ static int write_option(void *optctx, const OptionDef *po, const char *opt,
     /* new-style options contain an offset into optctx, old-style address of
      * a global var*/
     void *dst = po->flags & (OPT_OFFSET | OPT_SPEC) ?
-                (uint8_t *)optctx + po->u.off : po->u.dst_ptr;
+                (uint8_t *)optctx + po->u.off : po->u.dst_ptr;//如果是-y命令，这里返回false 即右值 po->u.dst_ptr  
+                											  //dst_ptr指向全局变量    &file_overwrite 
+                											  // 下面对全局变量file_overwrite 赋值 这里赋值为1
     int *dstcount;
 
     if (po->flags & OPT_SPEC) {
@@ -420,6 +422,7 @@ int parse_optgroup(void *optctx, OptionGroup *g)
         av_log(NULL, AV_LOG_DEBUG, "Applying option %s (%s) with argument %s.\n",
                o->key, o->opt->help, o->val);
 		//write_option（）根据预定好的设置规则。是设置到全局变量，还是到OptionsContext结构体的变量中
+		//这里可能会调用OptionDef的方法指针func_arg，指针指向的方法去处理对应的命令参数 如果func_arg有值的情况下
         ret = write_option(optctx, o->opt, o->key, o->val);
         if (ret < 0)
             return ret;

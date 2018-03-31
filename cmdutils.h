@@ -254,12 +254,12 @@ typedef struct Option {
 
 typedef struct OptionGroupDef {
     /**< group name */
-    const char *name;
+    const char *name;//举例：input file
     /**
      * Option to be used as group separator. Can be NULL for groups which
      * are terminated by a non-option argument (e.g. ffmpeg output files)
      */
-    const char *sep;
+    const char *sep;//举例 -i
     /**
      * Option flags that must be set on each option that is
      * applied to this group
