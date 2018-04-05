@@ -2603,6 +2603,7 @@ static int transcode_init(void)
     InputStream *ist;
     char error[1024] = {0};
     int want_sdp = 1;
+	
 
     for (i = 0; i < nb_filtergraphs; i++) {
         FilterGraph *fg = filtergraphs[i];
@@ -2618,16 +2619,19 @@ static int transcode_init(void)
             ofilter->ost->source_index = k;
         }
     }
-
+	
+	//初始化帧率仿真(转换时是不按帧率来的,但如果要求帧率仿真,就可以做到)  
     /* init framerate emulation */
     for (i = 0; i < nb_input_files; i++) {
         InputFile *ifile = input_files[i];
+		 //如果一个输入文件被要求帧率仿真(指的是即使是转换也像播放那样按照帧率来进行),  
+        //则为这个文件中所有流记录下开始时间  
         if (ifile->rate_emu)
             for (j = 0; j < ifile->nb_streams; j++)
                 input_streams[j + ifile->ist_index]->start = av_gettime_relative();
     }
 
-    /* output stream init */
+    /* output stream init  */
     for (i = 0; i < nb_output_files; i++) {
         oc = output_files[i]->ctx;
         if (!oc->nb_streams && !(oc->oformat->flags & AVFMT_NOSTREAMS)) {
@@ -2638,10 +2642,12 @@ static int transcode_init(void)
     }
 
     /* init complex filtergraphs */
+	 //初始化滤波
     for (i = 0; i < nb_filtergraphs; i++)
         if ((ret = avfilter_graph_config(filtergraphs[i]->graph, NULL)) < 0)
             return ret;
-
+		
+		//轮循所有的输出流，跟据对应的输入流，设置其编解码器的参数。
     /* for each output stream, we compute the right encoding parameters */
     for (i = 0; i < nb_output_streams; i++) {
         AVCodecContext *enc_ctx;
@@ -2671,13 +2677,16 @@ static int transcode_init(void)
                 if (enc_ctx->codec_type == AVMEDIA_TYPE_AUDIO || enc_ctx->codec_type == AVMEDIA_TYPE_VIDEO)
                     ost->st->disposition = AV_DISPOSITION_DEFAULT;
         }
-
+		
+		//如果只是复制一个流(不用解码后再编码)，则把输入流的编码参数直接赋值给输出流  
+		//此时是不需要解码也不需要编码，所以不需打开解码器和编码器  
         if (ost->stream_copy) {
             AVRational sar;
             uint64_t extra_size;
 
             av_assert0(ist && !ost->filter);
-
+			//计算输出流的编解码器的extradata的大小，然后分配缓冲区  
+			//然后把输入流的编解码器的extradata拷贝到输出流的编解码器中
             extra_size = (uint64_t)dec_ctx->extradata_size + FF_INPUT_BUFFER_PADDING_SIZE;
 
             if (extra_size > INT_MAX) {
@@ -2709,6 +2718,7 @@ static int transcode_init(void)
             }
             enc_ctx->extradata_size= dec_ctx->extradata_size;
             enc_ctx->bits_per_coded_sample  = dec_ctx->bits_per_coded_sample;
+			//重新鼓捣一下time base(这家伙就是帧率) 
 
             enc_ctx->time_base = ist->st->time_base;
             /*
@@ -2716,6 +2726,7 @@ static int transcode_init(void)
              * having the fps and timebase differe significantly adds quite some
              * overhead
              */
+               //如果输出文件是avi,做一点特殊处理
             if(!strcmp(oc->oformat->name, "avi")) {
                 if ( copy_tb<0 && av_q2d(ist->st->r_frame_rate) >= av_q2d(ist->st->avg_frame_rate)
                                && 0.5/av_q2d(ist->st->r_frame_rate) > av_q2d(ist->st->time_base)
@@ -2835,6 +2846,9 @@ static int transcode_init(void)
                 abort();
             }
         } else {
+	//如果不是复制,就麻烦多了  
+  
+        //获取编码器  
             if (!ost->enc)
                 ost->enc = avcodec_find_encoder(enc_ctx->codec_id);
             if (!ost->enc) {
@@ -2844,6 +2858,7 @@ static int transcode_init(void)
                 ret = AVERROR(EINVAL);
                 goto dump_format;
             }
+			//因为需要转换,所以既需解码又需编码 
 
             if (ist)
                 ist->decoding_needed |= DECODING_FOR_OST;
@@ -2885,11 +2900,13 @@ static int transcode_init(void)
                 }
                 // reduce frame rate for mpeg4 to be within the spec limits
                 if (enc_ctx->codec_id == AV_CODEC_ID_MPEG4) {
+					 //再修正一下帧率 
                     av_reduce(&ost->frame_rate.num, &ost->frame_rate.den,
                               ost->frame_rate.num, ost->frame_rate.den, 65535);
                 }
             }
-
+			
+			//根据不同媒体类型，赋值自己对应的编码参数
             switch (enc_ctx->codec_type) {
             case AVMEDIA_TYPE_AUDIO:
                 enc_ctx->sample_fmt     = ost->filter->filter->inputs[0]->format;
@@ -2907,7 +2924,7 @@ static int transcode_init(void)
                     av_log(oc, AV_LOG_WARNING, "Frame rate very high for a muxer not efficiently supporting it.\n"
                                                "Please consider specifying a lower framerate, a different muxer or -vsync 2\n");
                 }
-                for (j = 0; j < ost->forced_kf_count; j++)
+                for (j = 0; j < ost->forced_kf_count; j++)//多数情况不走这里
                     ost->forced_kf_pts[j] = av_rescale_q(ost->forced_kf_pts[j],
                                                          AV_TIME_BASE_Q,
                                                          enc_ctx->time_base);
@@ -2920,7 +2937,7 @@ static int transcode_init(void)
                     ost->filter->filter->inputs[0]->sample_aspect_ratio;
                 if (!strncmp(ost->enc->name, "libx264", 7) &&
                     enc_ctx->pix_fmt == AV_PIX_FMT_NONE &&
-                    ost->filter->filter->inputs[0]->format != AV_PIX_FMT_YUV420P)
+                    ost->filter->filter->inputs[0]->format != AV_PIX_FMT_YUV420P)//如果使用libx264编码
                     av_log(NULL, AV_LOG_WARNING,
                            "No pixel format specified, %s for H.264 encoding chosen.\n"
                            "Use -pix_fmt yuv420p for compatibility with outdated media players.\n",
@@ -2940,9 +2957,10 @@ static int transcode_init(void)
                     enc_ctx->width   != dec_ctx->width  ||
                     enc_ctx->height  != dec_ctx->height ||
                     enc_ctx->pix_fmt != dec_ctx->pix_fmt) {
+                    //-bits_per_raw_sample：设置每个像素点的比特数
                     enc_ctx->bits_per_raw_sample = frame_bits_per_raw_sample;
                 }
-
+				//显式控制关键帧的插入，参数为字符串，可以是一个时间戳，也可以是一个“expr:”前缀的表达式。
                 if (ost->forced_keyframes) {
                     if (!strncmp(ost->forced_keyframes, "expr:", 5)) {
                         ret = av_expr_parse(&ost->forced_keyframes_pexpr, ost->forced_keyframes+5,
@@ -2975,7 +2993,7 @@ static int transcode_init(void)
                 break;
             }
             /* two pass mode */
-            if (enc_ctx->flags & (CODEC_FLAG_PASS1 | CODEC_FLAG_PASS2)) {
+            if (enc_ctx->flags & (CODEC_FLAG_PASS1 | CODEC_FLAG_PASS2)) {//可能不走
                 char logfilename[1024];
                 FILE *f;
 
@@ -3009,7 +3027,7 @@ static int transcode_init(void)
             }
         }
 
-        if (ost->disposition) {
+        if (ost->disposition) {//可能不走
             static const AVOption opts[] = {
                 { "disposition"         , NULL, 0, AV_OPT_TYPE_FLAGS, { .i64 = 0 }, INT64_MIN, INT64_MAX, .unit = "flags" },
                 { "default"             , NULL, 0, AV_OPT_TYPE_CONST, { .i64 = AV_DISPOSITION_DEFAULT           },    .unit = "flags" },
@@ -3041,16 +3059,17 @@ static int transcode_init(void)
         }
     }
 
-    /* open each encoder */
+    /* open each encoder  //轮循所有输出流,打开每个输出流的编码器  */
     for (i = 0; i < nb_output_streams; i++) {
         ost = output_streams[i];
+		 //当然,只有在需要编码时才打开编码器  
         if (ost->encoding_needed) {
             AVCodec      *codec = ost->enc;
             AVCodecContext *dec = NULL;
 
             if ((ist = get_input_stream(ost)))
                 dec = ist->dec_ctx;
-            if (dec && dec->subtitle_header) {
+            if (dec && dec->subtitle_header) {//不走
                 /* ASS code assumes this buffer is null terminated so add extra byte. */
                 ost->enc_ctx->subtitle_header = av_mallocz(dec->subtitle_header_size + 1);
                 if (!ost->enc_ctx->subtitle_header) {
@@ -3087,7 +3106,7 @@ static int transcode_init(void)
                 return ret;
             }
         }
-
+		//将输出的编码上下文，拷贝给对应的输出的Avstream.codec
         ret = avcodec_copy_context(ost->st->codec, ost->enc_ctx);
         if (ret < 0) {
             av_log(NULL, AV_LOG_FATAL,
@@ -3096,7 +3115,7 @@ static int transcode_init(void)
         }
         ost->st->codec->codec= ost->enc_ctx->codec;
 
-        // copy timebase while removing common factors
+        // copy timebase while removing common factors 不用看
         ost->st->time_base = av_add_q(ost->enc_ctx->time_base, (AVRational){0, 1});
     }
 
@@ -3398,6 +3417,7 @@ static void *input_thread(void *arg)
 
     while (1) {
         AVPacket pkt;
+		//读取一帧数据
         ret = av_read_frame(f->ctx, &pkt);
 
         if (ret == AVERROR(EAGAIN)) {
@@ -3857,7 +3877,7 @@ static int transcode(void)
     OutputStream *ost;
     InputStream *ist;
     int64_t timer_start;
-
+	 //设置编码参数,打开所有输出流的编码器,打开所有输入流的解码器,写入所有输出文件的文件头,于是准备好了  
     ret = transcode_init();
     if (ret < 0)
         goto fail;
@@ -3867,7 +3887,8 @@ static int transcode(void)
     }
 
     timer_start = av_gettime_relative();
-
+	/* 多线程处理，见《FFmpeg源码剖析-多线程：input_threads》*/
+	//根据输入文件的数量，产生一些新的线程来处理这些输入， 在这个方法中读取frame 生成Avpacket
 #if HAVE_PTHREADS
     if ((ret = init_input_threads()) < 0)
         goto fail;
@@ -3875,17 +3896,24 @@ static int transcode(void)
 
     while (!received_sigterm) {
         int64_t cur_time= av_gettime_relative();
+		/*	如果在转码进行中，命令行的键盘上点击"q"，则任务结束。
+			   *  见《ffmpeg键盘命令响应程序详解》 
+			   */
 
-        /* if 'q' pressed, exits */
+        /* if 'q' pressed, exits         //先查看用户按下了什么键,跟据键做出相应的反应   */
         if (stdin_interaction)
             if (check_keyboard_interaction(cur_time) < 0)
                 break;
-
+			/* 如果没有数据需要输出了，则循环结束 */
         /* check if there's any stream where output is still needed */
         if (!need_output()) {
             av_log(NULL, AV_LOG_VERBOSE, "No more output streams to write to, finishing.\n");
             break;
         }
+		/* 转码用的主函数,
+			  * 每次循环是读取一个packet并处理 
+		*/
+		//	函数封装了主要的流水线，并在许多其他即时步骤之间编排诸如文件I / O、过滤、解码和编码等动作
 
         ret = transcode_step();
         if (ret < 0) {

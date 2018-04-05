@@ -1110,7 +1110,8 @@ static OutputStream *new_output_stream(OptionsContext *o, AVFormatContext *oc, e
     ost->enc_ctx->codec_type = type;
 
     if (ost->enc) {
-        AVIOContext *s = NULL;
+
+		AVIOContext *s = NULL;
         char *buf = NULL, *arg = NULL, *preset = NULL;
 
         ost->encoder_opts  = filter_codec_opts(o->g->codec_opts, ost->enc->id, oc, st, ost->enc);
