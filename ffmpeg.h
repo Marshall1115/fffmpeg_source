@@ -238,7 +238,7 @@ typedef struct FilterGraph {
     InputFilter   **inputs;
     int          nb_inputs;
     OutputFilter **outputs;
-    int         nb_outputs;
+    int         nb_outputs;//几个输出
 } FilterGraph;
 
 typedef struct InputStream {
@@ -417,7 +417,7 @@ typedef struct OutputStream {
     char *logfile_prefix;
     FILE *logfile;
 
-    OutputFilter *filter;
+    OutputFilter *filter;//init_simple_filtergraph 中初始化
     char *avfilter;
     char *filters;         ///< filtergraph associated to the -filter option
     char *filters_script;  ///< filtergraph script associated to the -filter_script option

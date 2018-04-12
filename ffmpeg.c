@@ -623,9 +623,11 @@ static void write_frame(AVFormatContext *s, AVPacket *pkt, OutputStream *ost)
         }
         ost->frame_number++;
     }
+	//对应参数"bsf"
 
     if (bsfc)
         av_packet_split_side_data(pkt);
+	//对应参数"bsf"
 
     while (bsfc) {
         AVPacket new_pkt = *pkt;
@@ -906,7 +908,7 @@ static void do_video_out(AVFormatContext *s,
 
     if (ost->source_index >= 0)
         ist = input_streams[ost->source_index];
-
+	/*求duration的值*/
     if (filter->inputs[0]->frame_rate.num > 0 &&
         filter->inputs[0]->frame_rate.den > 0)
         duration = 1/(av_q2d(filter->inputs[0]->frame_rate) * av_q2d(enc->time_base));
@@ -993,6 +995,7 @@ static void do_video_out(AVFormatContext *s,
     default:
         av_assert0(0);
     }
+	//之前的都是在算包含几个帧
 
     nb_frames = FFMIN(nb_frames, ost->max_frames - ost->frame_number);
     nb0_frames = FFMIN(nb0_frames, nb_frames);
@@ -1250,10 +1253,12 @@ static int reap_filters(void)
         if (!ost->filtered_frame && !(ost->filtered_frame = av_frame_alloc())) {
             return AVERROR(ENOMEM);
         }
+		  //从滤镜处理后的帧存放在这里
         filtered_frame = ost->filtered_frame;
 
         while (1) {
             double float_pts = AV_NOPTS_VALUE; // this is identical to filtered_frame.pts but with higher precision
+             //从滤镜获取帧
             ret = av_buffersink_get_frame_flags(filter, filtered_frame,
                                                AV_BUFFERSINK_FLAG_NO_REQUEST);
             if (ret < 0) {
@@ -1263,10 +1268,12 @@ static int reap_filters(void)
                 }
                 break;
             }
+			   //如果设置了此值，获取到的帧丢弃
             if (ost->finished) {
                 av_frame_unref(filtered_frame);
                 continue;
             }
+			 //下面这段不知道啥意思
             if (filtered_frame->pts != AV_NOPTS_VALUE) {
                 int64_t start_time = (of->start_time == AV_NOPTS_VALUE) ? 0 : of->start_time;
                 AVRational tb = enc->time_base;
@@ -1289,6 +1296,7 @@ static int reap_filters(void)
 
             switch (filter->inputs[0]->type) {
             case AVMEDIA_TYPE_VIDEO:
+				 //设置宽高比
                 if (!ost->frame_aspect_ratio.num)
                     enc->sample_aspect_ratio = filtered_frame->sample_aspect_ratio;
 
@@ -1298,6 +1306,7 @@ static int reap_filters(void)
                             float_pts,
                             enc->time_base.num, enc->time_base.den);
                 }
+				//编码并输出到文件
 
                 do_video_out(of->ctx, ost, filtered_frame, float_pts);
                 break;
@@ -1977,7 +1986,9 @@ static int decode_video(InputStream *ist, AVPacket *pkt, int *got_output)
         return AVERROR(ENOMEM);
     if (!ist->filter_frame && !(ist->filter_frame = av_frame_alloc()))
         return AVERROR(ENOMEM);
+	//解码后的帧存放处
     decoded_frame = ist->decoded_frame;
+	//开始给pkt中的时间赋值。只对dts赋值。
     pkt->dts  = av_rescale_q(ist->dts, AV_TIME_BASE_Q, ist->st->time_base);
 
     update_benchmark(NULL);
@@ -2030,11 +2041,13 @@ static int decode_video(InputStream *ist, AVPacket *pkt, int *got_output)
         }
         return ret;
     }
-
+	//对应参数"top"，和场有关
     if(ist->top_field_first>=0)
         decoded_frame->top_field_first = ist->top_field_first;
+	//记录解码的帧数
 
     ist->frames_decoded++;
+	//和硬件相关
 
     if (ist->hwaccel_retrieve_data && decoded_frame->format == ist->hwaccel_pix_fmt) {
         err = ist->hwaccel_retrieve_data(ist->dec_ctx, decoded_frame);
@@ -2042,9 +2055,10 @@ static int decode_video(InputStream *ist, AVPacket *pkt, int *got_output)
             goto fail;
     }
     ist->hwaccel_retrieved_pix_fmt = decoded_frame->format;
-
+	//此句很重要，是解码计算出的帧时间戳
     best_effort_timestamp= av_frame_get_best_effort_timestamp(decoded_frame);
     if(best_effort_timestamp != AV_NOPTS_VALUE)
+		  //ist中的时间单位是AV_TIME_BASE_Q，decoded_frame中的时间单位是ist->st->time_base
         ist->next_pts = ist->pts = av_rescale_q(decoded_frame->pts = best_effort_timestamp, ist->st->time_base, AV_TIME_BASE_Q);
 
     if (debug_ts) {
@@ -2057,11 +2071,13 @@ static int decode_video(InputStream *ist, AVPacket *pkt, int *got_output)
                decoded_frame->key_frame, decoded_frame->pict_type,
                ist->st->time_base.num, ist->st->time_base.den);
     }
-
+	/*表示视频就一帧。解完这次就不解了。处理音频时就没有这一句。在process_input_packet中会对此值做处理。
+	   如果处理完还有值就需要在解码*/
     pkt->size = 0;
 
     if (ist->st->sample_aspect_ratio.num)
         decoded_frame->sample_aspect_ratio = ist->st->sample_aspect_ratio;
+	//判断判断为真，需要重新设置滤镜链表。
 
     resample_changed = ist->resample_width   != decoded_frame->width  ||
                        ist->resample_height  != decoded_frame->height ||
@@ -2098,6 +2114,7 @@ static int decode_video(InputStream *ist, AVPacket *pkt, int *got_output)
                 break;
         } else
             f = decoded_frame;
+			  //放到滤镜里面
         ret = av_buffersrc_add_frame_flags(ist->filters[i]->filter, f, AV_BUFFERSRC_FLAG_PUSH);
         if (ret == AVERROR_EOF) {
             ret = 0; /* ignore */
@@ -2184,7 +2201,9 @@ static int process_input_packet(InputStream *ist, const AVPacket *pkt)
     int got_output = 0;
 
     AVPacket avpkt;
+	  //如果是文件的第一次读取，就处理
     if (!ist->saw_first_ts) {
+		 //有B帧的情况下dts和pts是不同的。
         ist->dts = ist->st->avg_frame_rate.num ? - ist->dec_ctx->has_b_frames * AV_TIME_BASE / av_q2d(ist->st->avg_frame_rate) : 0;
         ist->pts = 0;
         if (pkt && pkt->pts != AV_NOPTS_VALUE && !ist->decoding_needed) {
@@ -2193,11 +2212,16 @@ static int process_input_packet(InputStream *ist, const AVPacket *pkt)
         }
         ist->saw_first_ts = 1;
     }
+	//此时在ist中dts和pts都是有值的，第一次进来是初始值，之后进来的值
+		//初始化next_dts和next_pts
 
     if (ist->next_dts == AV_NOPTS_VALUE)
         ist->next_dts = ist->dts;
     if (ist->next_pts == AV_NOPTS_VALUE)
         ist->next_pts = ist->pts;
+	/*如果pkt为NULL，表示流结束了。给avpkt赋值为此后在调用decode_video()->avcodec_decode_video2()时会将剩余的帧都返回。
+	   在process_input()函数的出错处理里面有调用process_input_packet(ist, NULL, 0);就在此处处理
+	   */
 
     if (!pkt) {
         /* EOF handling */
@@ -2214,6 +2238,8 @@ static int process_input_packet(InputStream *ist, const AVPacket *pkt)
         if (ist->dec_ctx->codec_type != AVMEDIA_TYPE_VIDEO || !ist->decoding_needed)
             ist->next_pts = ist->pts = ist->dts;
     }
+	
+	/*pkt里为视频是为一帧，为音频是可能为多帧。所以要一个循环*/
 
     // while we have more to decode or while the decoder did output something on EOF
     while (ist->decoding_needed && (avpkt.size > 0 || (!pkt && got_output))) {
@@ -2222,30 +2248,33 @@ static int process_input_packet(InputStream *ist, const AVPacket *pkt)
 
         ist->pts = ist->next_pts;
         ist->dts = ist->next_dts;
-
+		//没什么用。
         if (avpkt.size && avpkt.size != pkt->size &&
             !(ist->dec->capabilities & CODEC_CAP_SUBFRAMES)) {
             av_log(NULL, ist->showed_multi_packet_warning ? AV_LOG_VERBOSE : AV_LOG_WARNING,
                    "Multiple frames in a packet from stream %d\n", pkt->stream_index);
             ist->showed_multi_packet_warning = 1;
         }
-
+			
+		//解码一个pkt
         switch (ist->dec_ctx->codec_type) {
         case AVMEDIA_TYPE_AUDIO:
             ret = decode_audio    (ist, &avpkt, &got_output);
             break;
         case AVMEDIA_TYPE_VIDEO:
             ret = decode_video    (ist, &avpkt, &got_output);
+			   //返回的pkt中已经计算出了时长
             if (avpkt.duration) {
                 duration = av_rescale_q(avpkt.duration, ist->st->time_base, AV_TIME_BASE_Q);
             } else if(ist->dec_ctx->framerate.num != 0 && ist->dec_ctx->framerate.den != 0) {
+               //根据帧率计算时长
                 int ticks= av_stream_get_parser(ist->st) ? av_stream_get_parser(ist->st)->repeat_pict+1 : ist->dec_ctx->ticks_per_frame;
                 duration = ((int64_t)AV_TIME_BASE *
                                 ist->dec_ctx->framerate.den * ticks) /
                                 ist->dec_ctx->framerate.num / ist->dec_ctx->ticks_per_frame;
             } else
                 duration = 0;
-
+			//dts和pts加时长，就是下一个帧的dts和pts，注意pkt中的都是临时的。只是在解码的时候用，过程当中的时间都保持在ist中。
             if(ist->dts != AV_NOPTS_VALUE && duration) {
                 ist->next_dts += duration;
             }else
@@ -2268,6 +2297,9 @@ static int process_input_packet(InputStream *ist, const AVPacket *pkt)
         avpkt.pts= AV_NOPTS_VALUE;
 
         // touch data and size only if not EOF
+        /*如果是视频帧，avpkt.size==0，ret==0，循环结束，
+            如果是音频帧，avpkt可能包含多帧，avpkt.size处理完可能不为0，
+            可能需要循环几次*/
         if (pkt) {
             if(ist->dec_ctx->codec_type != AVMEDIA_TYPE_AUDIO)
                 ret = avpkt.size;
@@ -2280,7 +2312,8 @@ static int process_input_packet(InputStream *ist, const AVPacket *pkt)
         if (got_output && !pkt)
             break;
     }
-
+	
+	/*如果流不需要重新编解码的情况，这里处理dts和next_dts*/
     /* handle stream copy */
     if (!ist->decoding_needed) {
         ist->dts = ist->next_dts;
@@ -2290,14 +2323,20 @@ static int process_input_packet(InputStream *ist, const AVPacket *pkt)
                              ist->dec_ctx->sample_rate;
             break;
         case AVMEDIA_TYPE_VIDEO:
+			    //优先按帧率计算
             if (ist->framerate.num) {
                 // TODO: Remove work-around for c99-to-c89 issue 7
                 AVRational time_base_q = AV_TIME_BASE_Q;
+			  //ist中的时间基是ffmpeg的内部时间基time_base_q，将next_dts转换为流本身的时间基
                 int64_t next_dts = av_rescale_q(ist->next_dts, time_base_q, av_inv_q(ist->framerate));
+			   //next_dts为以帧率为时间基，+1就为下一帧的时间
                 ist->next_dts = av_rescale_q(next_dts + 1, av_inv_q(ist->framerate), time_base_q);
             } else if (pkt->duration) {
+				//pkt->duration的时间基为流本身的ist->st->time_base，将它进行转换，并加到ist->next_dts，
+                //含义是现在的dts加上此帧经过的时长，表示下一帧的dts
                 ist->next_dts += av_rescale_q(pkt->duration, ist->st->time_base, AV_TIME_BASE_Q);
             } else if(ist->dec_ctx->framerate.num != 0) {
+				     /*这里之后再分析吧。大概也是根据ist->dec_ctx->framerate算出一帧的时间加到next_dts上就是下一帧开始时间*/
                 int ticks= av_stream_get_parser(ist->st) ? av_stream_get_parser(ist->st)->repeat_pict + 1 : ist->dec_ctx->ticks_per_frame;
                 ist->next_dts += ((int64_t)AV_TIME_BASE *
                                   ist->dec_ctx->framerate.den * ticks) /
@@ -2313,7 +2352,7 @@ static int process_input_packet(InputStream *ist, const AVPacket *pkt)
 
         if (!check_output_constraints(ist, ost) || ost->encoding_needed)
             continue;
-
+		//如果不需要重新编解码，就走到这里。ost->encoding_needed判断。
         do_streamcopy(ist, ost, pkt);
     }
 
@@ -2634,7 +2673,7 @@ static int transcode_init(void)
     /* output stream init  */
     for (i = 0; i < nb_output_files; i++) {
         oc = output_files[i]->ctx;
-        if (!oc->nb_streams && !(oc->oformat->flags & AVFMT_NOSTREAMS)) {
+        if (!oc->nb_streams && !(oc->oformat->flags & AVFMT_NOSTREAMS)) {//视频没有流
             av_dump_format(oc, i, oc->filename, 1);
             av_log(NULL, AV_LOG_ERROR, "Output file #%d does not contain any stream\n", i);
             return AVERROR(EINVAL);
@@ -2687,6 +2726,7 @@ static int transcode_init(void)
             av_assert0(ist && !ost->filter);
 			//计算输出流的编解码器的extradata的大小，然后分配缓冲区  
 			//然后把输入流的编解码器的extradata拷贝到输出流的编解码器中
+			//extradata_size :sps pps
             extra_size = (uint64_t)dec_ctx->extradata_size + FF_INPUT_BUFFER_PADDING_SIZE;
 
             if (extra_size > INT_MAX) {
@@ -2850,7 +2890,7 @@ static int transcode_init(void)
   
         //获取编码器  
             if (!ost->enc)
-                ost->enc = avcodec_find_encoder(enc_ctx->codec_id);
+                ost->enc = avcodec_find_encoder(enc_ctx->codec_id);//outStream.enc_ctx
             if (!ost->enc) {
                 /* should only happen when a default codec is not present. */
                 snprintf(error, sizeof(error), "Encoder (codec %s) not found for output stream #%d:%d",
@@ -2870,15 +2910,16 @@ static int transcode_init(void)
                 (enc_ctx->codec_type == AVMEDIA_TYPE_VIDEO ||
                  enc_ctx->codec_type == AVMEDIA_TYPE_AUDIO)) {
                     FilterGraph *fg;
-                    fg = init_simple_filtergraph(ist, ost);
-                    if (configure_filtergraph(fg)) {
+					//根据需要将InputStream OutputStream 赋值给fg的inputs和filter
+                    fg = init_simple_filtergraph(ist, ost);//初始化简单filter的函数
+                    if (configure_filtergraph(fg)) {//配置filter图
                         av_log(NULL, AV_LOG_FATAL, "Error opening filters!\n");
                         exit_program(1);
                     }
             }
 
             if (enc_ctx->codec_type == AVMEDIA_TYPE_VIDEO) {
-                if (ost->filter && !ost->frame_rate.num)
+                if (ost->filter && !ost->frame_rate.num)//走这里
                     ost->frame_rate = av_buffersink_get_frame_rate(ost->filter->filter);
                 if (ist && !ost->frame_rate.num)
                     ost->frame_rate = ist->framerate;
@@ -2992,7 +3033,7 @@ static int transcode_init(void)
                 abort();
                 break;
             }
-            /* two pass mode */
+            /* two pass mode 两遍编码*/
             if (enc_ctx->flags & (CODEC_FLAG_PASS1 | CODEC_FLAG_PASS2)) {//可能不走
                 char logfilename[1024];
                 FILE *f;
@@ -3486,7 +3527,7 @@ static int init_input_threads(void)
             strcmp(f->ctx->iformat->name, "lavfi"))
             f->non_blocking = 1;
         ret = av_thread_message_queue_alloc(&f->in_thread_queue,
-                                            f->thread_queue_size, sizeof(AVPacket));
+                                            f->thread_queue_size, sizeof(AVPacket));//分析到AVThreadMessageQueue这里，找到AVThreadMessageQueue作用
         if (ret < 0)
             return ret;
 
@@ -3682,11 +3723,26 @@ static int process_input(int file_index)
             memcpy(dst_data, src_sd->data, src_sd->size);
         }
     }
-
+	
+	//如果pkt.dts或pkt.pts有值，而不是AV_NOPTS_VALUE时，做处理。
+	/*
+	ifile->ts_offset在open_input_file函数中有处理，涉及到参数"itsoffset"(o->input_ts_offset)、
+	"copyts"(copy_ts)、"start_at_zero"(start_at_zero )、"ss"(ic->start_time)
+	语句如下。
+	f->ts_offset  = o->input_ts_offset - (copy_ts ? (start_at_zero && ic->start_time != AV_NOPTS_VALUE ? ic->start_time : 0) : timestamp);
+	如果没有这些设置。f->ts_offset=0
+	*/
     if (pkt.dts != AV_NOPTS_VALUE)
         pkt.dts += av_rescale_q(ifile->ts_offset, AV_TIME_BASE_Q, ist->st->time_base);
     if (pkt.pts != AV_NOPTS_VALUE)
         pkt.pts += av_rescale_q(ifile->ts_offset, AV_TIME_BASE_Q, ist->st->time_base);
+	//ist->ts_scale在add_input_streams函数中设置
+	/*
+	ist->ts_scale = 1.0;//默认是1
+	MATCH_PER_STREAM_OPT(ts_scale, dbl, ist->ts_scale, ic, st);
+	涉及到的参数是"itsscale"：解释为"set the input ts scale"
+	貌似是单位
+	*/
 
     if (pkt.pts != AV_NOPTS_VALUE)
         pkt.pts *= ist->ts_scale;
@@ -3697,6 +3753,7 @@ static int process_input(int file_index)
          ist->dec_ctx->codec_type == AVMEDIA_TYPE_AUDIO) &&
         pkt.dts != AV_NOPTS_VALUE && ist->next_dts == AV_NOPTS_VALUE && !copy_ts
         && (is->iformat->flags & AVFMT_TS_DISCONT) && ifile->last_ts != AV_NOPTS_VALUE) {
+        //做时间基的转换
         int64_t pkt_dts = av_rescale_q(pkt.dts, ist->st->time_base, AV_TIME_BASE_Q);
         int64_t delta   = pkt_dts - ifile->last_ts;
         if (delta < -1LL*dts_delta_threshold*AV_TIME_BASE ||
@@ -3835,7 +3892,7 @@ static int transcode_step(void)
     int ret;
 
     ost = choose_output();
-    if (!ost) {
+    if (!ost) {//没有找到输出流
         if (got_eagain()) {
             reset_eagain();
             av_usleep(10000);
@@ -3845,7 +3902,7 @@ static int transcode_step(void)
         return AVERROR_EOF;
     }
 
-    if (ost->filter) {
+    if (ost->filter) {//如果没有没有设置过滤器参数，不看这里，跳出if else
         if ((ret = transcode_from_filter(ost->filter->graph, &ist)) < 0)
             return ret;
         if (!ist)
@@ -3854,7 +3911,7 @@ static int transcode_step(void)
         av_assert0(ost->source_index >= 0);
         ist = input_streams[ost->source_index];
     }
-
+	//读入数据并处理，放到滤镜里面 
     ret = process_input(ist->file_index);
     if (ret == AVERROR(EAGAIN)) {
         if (input_files[ist->file_index]->eagain)
