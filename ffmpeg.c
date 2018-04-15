@@ -724,6 +724,7 @@ static void write_frame(AVFormatContext *s, AVPacket *pkt, OutputStream *ost)
               );
     }
 
+	//方法并没有做什么，仅仅是 av_interleaved_write_frame
     ret = av_interleaved_write_frame(s, pkt);
     if (ret < 0) {
         print_error("av_interleaved_write_frame()", ret);
@@ -889,7 +890,8 @@ static void do_subtitle_out(AVFormatContext *s,
         write_frame(s, &pkt, ost);
     }
 }
-
+							
+//do_video_out()函数用于编码一帧视频。
 static void do_video_out(AVFormatContext *s,
                          OutputStream *ost,
                          AVFrame *next_picture,
@@ -921,6 +923,7 @@ static void do_video_out(AVFormatContext *s,
         next_picture &&
         ist &&
         lrintf(av_frame_get_pkt_duration(next_picture) * av_q2d(ist->st->time_base) / av_q2d(enc->time_base)) > 0) {
+        //将av_frame_get_pkt_duration(next_picture)表示的ist->st->time_base时间基，转换成帧率类型的时间基1/25
         duration = lrintf(av_frame_get_pkt_duration(next_picture) * av_q2d(ist->st->time_base) / av_q2d(enc->time_base));
     }
 
@@ -1133,7 +1136,7 @@ static void do_video_out(AVFormatContext *s,
 
             if (pkt.pts == AV_NOPTS_VALUE && !(enc->codec->capabilities & CODEC_CAP_DELAY))
                 pkt.pts = ost->sync_opts;
-
+			//将enc->time_base表示的pkt转换为AVStream->time_base为单位
             av_packet_rescale_ts(&pkt, enc->time_base, ost->st->time_base);
 
             if (debug_ts) {
@@ -2082,7 +2085,7 @@ static int decode_video(InputStream *ist, AVPacket *pkt, int *got_output)
     resample_changed = ist->resample_width   != decoded_frame->width  ||
                        ist->resample_height  != decoded_frame->height ||
                        ist->resample_pix_fmt != decoded_frame->format;
-    if (resample_changed) {
+    if (resample_changed) {//重采样
         av_log(NULL, AV_LOG_INFO,
                "Input stream #%d:%d frame changed from size:%dx%d fmt:%s to size:%dx%d fmt:%s\n",
                ist->file_index, ist->st->index,
@@ -2114,7 +2117,7 @@ static int decode_video(InputStream *ist, AVPacket *pkt, int *got_output)
                 break;
         } else
             f = decoded_frame;
-			  //放到滤镜里面
+			  //将解码得到的帧放到滤镜里面
         ret = av_buffersrc_add_frame_flags(ist->filters[i]->filter, f, AV_BUFFERSRC_FLAG_PUSH);
         if (ret == AVERROR_EOF) {
             ret = 0; /* ignore */
@@ -2194,15 +2197,15 @@ out:
     return ret;
 }
 
-/* pkt = NULL means EOF (needed to flush decoder buffers) */
+/* pkt = NULL means EOF (needed to flush decoder buffers) 该函数对帧数据进行解码并通过所有适用的过滤器进行处理。 */
 static int process_input_packet(InputStream *ist, const AVPacket *pkt)
 {
     int ret = 0, i;
     int got_output = 0;
 
     AVPacket avpkt;
-	  //如果是文件的第一次读取，就处理
-    if (!ist->saw_first_ts) {
+	
+    if (!ist->saw_first_ts) {  //如果是文件的第一次读取，就处理 ，语句块只执行一次 没有b帧pts=dts =0
 		 //有B帧的情况下dts和pts是不同的。
         ist->dts = ist->st->avg_frame_rate.num ? - ist->dec_ctx->has_b_frames * AV_TIME_BASE / av_q2d(ist->st->avg_frame_rate) : 0;
         ist->pts = 0;
@@ -2262,7 +2265,7 @@ static int process_input_packet(InputStream *ist, const AVPacket *pkt)
             ret = decode_audio    (ist, &avpkt, &got_output);
             break;
         case AVMEDIA_TYPE_VIDEO:
-            ret = decode_video    (ist, &avpkt, &got_output);
+            ret = decode_video    (ist, &avpkt, &got_output);//解码得到Avfame并放入到滤镜中
 			   //返回的pkt中已经计算出了时长
             if (avpkt.duration) {
                 duration = av_rescale_q(avpkt.duration, ist->st->time_base, AV_TIME_BASE_Q);
@@ -3470,8 +3473,9 @@ static void *input_thread(void *arg)
             break;
         }
         av_dup_packet(&pkt);
+		//flags AV_THREAD_MESSAGE_NONBLOCK	 如果这个标志被设置，send和recv操作是非阻塞的，并且如果它们不能继续，立即返回AVERROR（EAGAIN）
         ret = av_thread_message_queue_send(f->in_thread_queue, &pkt, flags);
-        if (flags && ret == AVERROR(EAGAIN)) {
+        if (flags && ret == AVERROR(EAGAIN)) {//如果操作是非阻塞的
             flags = 0;
             ret = av_thread_message_queue_send(f->in_thread_queue, &pkt, flags);
             av_log(f->ctx, AV_LOG_WARNING,
@@ -3602,6 +3606,7 @@ static int process_input(int file_index)
     int ret, i, j;
 
     is  = ifile->ctx;
+	//读取一个packet av_read_frame
     ret = get_input_packet(ifile, &pkt);
 
     if (ret == AVERROR(EAGAIN)) {
@@ -3618,6 +3623,7 @@ static int process_input(int file_index)
         for (i = 0; i < ifile->nb_streams; i++) {
             ist = input_streams[ifile->ist_index + i];
             if (ist->decoding_needed) {
+				//解码一帧计算ptsdts 和nextpts，dts ，并将avframe添加到滤镜中
                 ret = process_input_packet(ist, NULL);
                 if (ret>0)
                     return 0;
@@ -3816,9 +3822,9 @@ static int process_input(int file_index)
                av_ts2timestr(input_files[ist->file_index]->ts_offset, &AV_TIME_BASE_Q));
     }
 
-    sub2video_heartbeat(ist, pkt.pts);
+    sub2video_heartbeat(ist, pkt.pts);//字幕相关
 
-    ret = process_input_packet(ist, &pkt);
+    ret = process_input_packet(ist, &pkt);	//解码一帧计算ptsdts 和nextpts，dts ，并将avframe添加到滤镜中
     if (ret < 0) {
         av_log(NULL, AV_LOG_ERROR, "Error while decoding stream #%d:%d: %s\n",
                ist->file_index, ist->st->index, av_err2str(ret));
@@ -3921,7 +3927,7 @@ static int transcode_step(void)
     if (ret < 0)
         return ret == AVERROR_EOF ? 0 : ret;
 
-    return reap_filters();
+    return reap_filters();//写入帧
 }
 
 /*
@@ -3944,7 +3950,7 @@ static int transcode(void)
     }
 
     timer_start = av_gettime_relative();
-	/* 多线程处理，见《FFmpeg源码剖析-多线程：input_threads》*/
+	/* 多线程处理转码，见《FFmpeg源码剖析-多线程：input_threads》*/
 	//根据输入文件的数量，产生一些新的线程来处理这些输入， 在这个方法中读取frame 生成Avpacket
 #if HAVE_PTHREADS
     if ((ret = init_input_threads()) < 0)
@@ -3971,7 +3977,6 @@ static int transcode(void)
 			  * 每次循环是读取一个packet并处理 
 		*/
 		//	函数封装了主要的流水线，并在许多其他即时步骤之间编排诸如文件I / O、过滤、解码和编码等动作
-
         ret = transcode_step();
         if (ret < 0) {
             if (ret == AVERROR_EOF || ret == AVERROR(EAGAIN))
@@ -3995,7 +4000,7 @@ static int transcode(void)
             process_input_packet(ist, NULL);
         }
     }
-    flush_encoders();
+    flush_encoders();//刷新剩余的Avpacket数据
 
     term_exit();
 
