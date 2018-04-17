@@ -2753,6 +2753,7 @@ static int transcode_init(void)
             enc_ctx->rc_buffer_size = dec_ctx->rc_buffer_size;
             enc_ctx->field_order    = dec_ctx->field_order;
             if (dec_ctx->extradata_size) {
+				//拷贝sps pps
                 enc_ctx->extradata      = av_mallocz(extra_size);
                 if (!enc_ctx->extradata) {
                     return AVERROR(ENOMEM);
@@ -2913,7 +2914,7 @@ static int transcode_init(void)
                 (enc_ctx->codec_type == AVMEDIA_TYPE_VIDEO ||
                  enc_ctx->codec_type == AVMEDIA_TYPE_AUDIO)) {
                     FilterGraph *fg;
-					//根据需要将InputStream OutputStream 赋值给fg的inputs和filter
+					//根据需要将InputStream OutputStream 和FilterGraph AVFilterGraph
                     fg = init_simple_filtergraph(ist, ost);//初始化简单filter的函数
                     if (configure_filtergraph(fg)) {//配置filter图
                         av_log(NULL, AV_LOG_FATAL, "Error opening filters!\n");
@@ -3606,7 +3607,7 @@ static int process_input(int file_index)
     int ret, i, j;
 
     is  = ifile->ctx;
-	//读取一个packet av_read_frame
+	// av_read_frame
     ret = get_input_packet(ifile, &pkt);
 
     if (ret == AVERROR(EAGAIN)) {
@@ -3940,7 +3941,7 @@ static int transcode(void)
     OutputStream *ost;
     InputStream *ist;
     int64_t timer_start;
-	 //设置编码参数,打开所有输出流的编码器,打开所有输入流的解码器,写入所有输出文件的文件头,于是准备好了  
+	 //设置编码参数,简单配置AVFilterGraph，打开所有输出流的编码器写入所有输出文件的文件头,于是准备好了  
     ret = transcode_init();
     if (ret < 0)
         goto fail;
