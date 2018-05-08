@@ -791,6 +791,7 @@ static void dump_attachment(AVStream *st, const char *filename)
     avio_close(out);
 }
 
+//根据&o->g->format_opts, o->g->codec_opts 查找打开输入文件的，并为输入文件，指定输入的解码器（如果有设置的话）
 static int open_input_file(OptionsContext *o, const char *filename)
 {
     InputFile *f;
@@ -861,7 +862,7 @@ static int open_input_file(OptionsContext *o, const char *filename)
     MATCH_PER_TYPE_OPT(codec_names, str, subtitle_codec_name, ic, "s");
     MATCH_PER_TYPE_OPT(codec_names, str,     data_codec_name, ic, "d");
 
-    ic->video_codec_id   = video_codec_name ?
+    ic->video_codec_id   = video_codec_name ?//查找编码器或解码器find_codec_or_die
         find_codec_or_die(video_codec_name   , AVMEDIA_TYPE_VIDEO   , 0)->id : AV_CODEC_ID_NONE;
     ic->audio_codec_id   = audio_codec_name ?
         find_codec_or_die(audio_codec_name   , AVMEDIA_TYPE_AUDIO   , 0)->id : AV_CODEC_ID_NONE;
@@ -894,10 +895,11 @@ static int open_input_file(OptionsContext *o, const char *filename)
     }
     if (scan_all_pmts_set)
         av_dict_set(&o->g->format_opts, "scan_all_pmts", NULL, AV_DICT_MATCH_CASE);
+	 //删除o->g->format_opts中和o->g->codec_opts中相同的参数项
     remove_avoptions(&o->g->format_opts, o->g->codec_opts);
     assert_avoptions(o->g->format_opts);
 
-    /* apply forced codec ids */
+    /* apply forced codec ids apply forced codec ids 找到解码器，如果命令行里有指定强制解码类型就用之，否则根据流中的st->codec->codec_id找 */
     for (i = 0; i < ic->nb_streams; i++)
         choose_decoder(o, ic, ic->streams[i]);
 
@@ -930,12 +932,14 @@ static int open_input_file(OptionsContext *o, const char *filename)
         }
     }
 
-    /* update the current parameters so that they match the one of the input stream */
+    /* update the current parameters so that they match the one of the input stream  */
+	//add_input_streams av_dump_format 生成InputStream并打印信息，无关紧要
     add_input_streams(o, ic);
 
     /* dump the file content */
     av_dump_format(ic, nb_input_files, filename, 0);
 
+	//在这里真正生成InputStream，覆盖add_input_streams中生成的InputStream
     GROW_ARRAY(input_files, nb_input_files);
     f = av_mallocz(sizeof(*f));
     if (!f)
