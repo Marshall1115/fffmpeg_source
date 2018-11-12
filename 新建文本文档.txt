@@ -1,0 +1,40 @@
+转码时，是否都是通过滤镜完成？-是
+
+process_input分析：
+
+1.第一个avpacket.pts 为-2048 
+process_input：
+2. pkt.pts += av_rescale_q(ifile->ts_offset, AV_TIME_BASE_Q, ist->st->time_base);//随后在这里设置pts  为0
+随后设置：
+3. ist->next_pts = ist->pts; ist->next_dts = ist->dts;//这里ist->dts第一次为0
+第三部：转换为ffmpeg统一的时间单位
+4. ist->next_dts = ist->dts = av_rescale_q(pkt->dts, ist->st->time_base, AV_TIME_BASE_Q);
+随后重新记录下一帧：这里针对音频
+5.  ist->next_pts = ist->pts = ist->dts;
+随后如果有解码需要，那么就解码
+
+  ist->next_pts = ist->pts = ist->dts;
+
+这里音频设置设置下一帧的播放时间:
+  ist->next_pts += ((int64_t)AV_TIME_BASE * decoded_frame->nb_samples) /
+                     avctx->sample_rate;//nb_samples为1024    sample_rate为44100
+    ist->next_dts += ((int64_t)AV_TIME_BASE * decoded_frame->nb_samples) /
+                     avctx->sample_rate;
+
+随后设置av frame的pts
+  decoded_frame->pts = decoded_frame->pkt_pts;//第一帧都是0
+        decoded_frame_tb   = ist->st->time_base;
+
+将当前frame添加到队列中
+av_buffersrc_add_frame_flags(ist->filters[i]->filter, f,
+                                     AV_BUFFERSRC_FLAG_PUSH)
+
+上面流程process_input分析完毕：
+下面分析reap_filters
+
+解码第二帧时：流程2为 pkt.pts原本为-1024 ，随后 av_rescale_q(ifile->ts_offset  pkt.pts 为1024
+随后流程多走了一步：
+	
+   //做时间基的转换  将时间基转换为单位AV_TIME_BASE_Q
+        int64_t pkt_dts = av_rescale_q(pkt.dts, ist->st->time_base, AV_TIME_BASE_Q);
+        int64_t delta   = pkt_dts - ifile->last_ts;//下面分析ifile->last_ts在什么时候赋值的
