@@ -430,7 +430,7 @@ typedef struct OutputStream {
     char *apad;
     OSTFinished finished;        /* no more packets should be written for this stream */
     int unavailable;                     /* true if the steram is unavailable (possibly temporarily) */
-    int stream_copy;//如果true那么输出不需要再编码
+    int stream_copy;//如果true那么输出不需要再编码，codec_name=copy时
     const char *attachment_filename;
     int copy_initial_nonkeyframes;
     int copy_prior_start;
