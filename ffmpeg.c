@@ -1277,7 +1277,7 @@ static int reap_filters(void)
                 continue;
             }
 			 //下面这段不知道啥意思
-            if (filtered_frame->pts != AV_NOPTS_VALUE) {
+            if (filtered_frame->pts != AV_NOPTS_VALUE) {//float_pts 用来控制音视频同步的，没有这里输出的音视频不同步
                 int64_t start_time = (of->start_time == AV_NOPTS_VALUE) ? 0 : of->start_time;
                 AVRational tb = enc->time_base;
                 int extra_bits = av_clip(29 - av_log2(tb.den), 0, 16);
@@ -2197,7 +2197,9 @@ out:
     return ret;
 }
 
-/* pkt = NULL means EOF (needed to flush decoder buffers) 该函数对帧数据进行解码并通过所有适用的过滤器进行处理。 */
+/* pkt = NULL means EOF (needed to flush decoder buffers) 
+解码一帧计算ptsdts 和nextpts，dts 
+该函数对帧数据进行解码并通过所有适用的过滤器进行处理。，并将avframe添加到滤镜中 */
 static int process_input_packet(InputStream *ist, const AVPacket *pkt)
 {
     int ret = 0, i;
@@ -2265,8 +2267,10 @@ static int process_input_packet(InputStream *ist, const AVPacket *pkt)
             ret = decode_audio    (ist, &avpkt, &got_output);
             break;
         case AVMEDIA_TYPE_VIDEO:
-            ret = decode_video    (ist, &avpkt, &got_output);//解码得到Avfame并放入到滤镜中
-			   //返回的pkt中已经计算出了时长
+            ret = decode_video    (ist, &avpkt, &got_output);
+												//解码avcodec_decode_video2得到Avfame并放入到滤镜中
+			  									 //返回的pkt中已经计算出了时长
+			  									 //更新值：  ist->next_pts = ist->pts =best_effort_timestamp（单位ffmpeg标准时间）
             if (avpkt.duration) {
                 duration = av_rescale_q(avpkt.duration, ist->st->time_base, AV_TIME_BASE_Q);
             } else if(ist->dec_ctx->framerate.num != 0 && ist->dec_ctx->framerate.den != 0) {
@@ -3598,6 +3602,7 @@ static void reset_eagain(void)
  *   this function should be called again
  * - AVERROR_EOF -- this function should not be called again
  */
+ //方法调用av_read_frame 随后调用process_input_packet,不要关注细节
 static int process_input(int file_index)
 {
     InputFile *ifile = input_files[file_index];
@@ -3624,7 +3629,7 @@ static int process_input(int file_index)
         for (i = 0; i < ifile->nb_streams; i++) {
             ist = input_streams[ifile->ist_index + i];
             if (ist->decoding_needed) {
-				//解码一帧计算ptsdts 和nextpts，dts ，并将avframe添加到滤镜中
+				//解码一帧计算ptsdts 和nextpts，dts ，并将avframe添加到滤镜中(这里输出剩余帧)
                 ret = process_input_packet(ist, NULL);
                 if (ret>0)
                     return 0;
@@ -3713,7 +3718,7 @@ static int process_input(int file_index)
     }
 
     /* add the stream-global side data to the first packet */
-    if (ist->nb_packets == 1) {
+    if (ist->nb_packets == 1) {//多数情况不走这里
         if (ist->st->nb_side_data)
             av_packet_split_side_data(&pkt);
         for (i = 0; i < ist->st->nb_side_data; i++) {
@@ -3780,7 +3785,7 @@ static int process_input(int file_index)
          pkt.dts != AV_NOPTS_VALUE && ist->next_dts != AV_NOPTS_VALUE &&
         !copy_ts) {
         int64_t pkt_dts = av_rescale_q(pkt.dts, ist->st->time_base, AV_TIME_BASE_Q);
-        int64_t delta   = pkt_dts - ist->next_dts;
+        int64_t delta   = pkt_dts - ist->next_dts;//将当前的avpacket.dts和上一帧的dts 进行比较得到差值
         if (is->iformat->flags & AVFMT_TS_DISCONT) {
             if (delta < -1LL*dts_delta_threshold*AV_TIME_BASE ||
                 delta >  1LL*dts_delta_threshold*AV_TIME_BASE ||
@@ -3918,7 +3923,7 @@ static int transcode_step(void)
         av_assert0(ost->source_index >= 0);
         ist = input_streams[ost->source_index];
     }
-	//读入数据并处理，放到滤镜里面 
+	//解码一帧数据并处理，放到滤镜里面 
     ret = process_input(ist->file_index);
     if (ret == AVERROR(EAGAIN)) {
         if (input_files[ist->file_index]->eagain)

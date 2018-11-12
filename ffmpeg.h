@@ -246,7 +246,7 @@ typedef struct InputStream {
     AVStream *st;
     int discard;             /* true if stream data should be discarded */
     int user_set_discard;
-    int decoding_needed;     /* non zero if the packets must be decoded in 'raw_fifo', see DECODING_FOR_* */
+    int decoding_needed;//如果不是复制流，那么就是1     /* non zero if the packets must be decoded in 'raw_fifo', see DECODING_FOR_* */
 #define DECODING_FOR_OST    1
 #define DECODING_FOR_FILTER 2
 
@@ -337,7 +337,7 @@ typedef struct InputFile {
     int ist_index;        /* index of first stream in input_streams */
     int64_t input_ts_offset;
     int64_t ts_offset;
-    int64_t last_ts;
+    int64_t last_ts;//上一帧的dts 单位AV_TIME_BASE_Q
     int64_t start_time;   /* user-specified start time in AV_TIME_BASE or AV_NOPTS_VALUE */
     int64_t recording_time;
     int nb_streams;       /* number of stream that ffmpeg is aware of; may be different
